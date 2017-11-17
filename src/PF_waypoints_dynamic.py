@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from geometry_msgs.msg import TwistStamped
+from std_msgs.msg import Float64MultiArray
 import rospy
 import numpy as np
 
@@ -17,14 +17,13 @@ waypointsBasic=[[1.4,4.5,7.5],[-1.4,-4.5,7.5]]
 
 waypoints=waypointsTurns
 #topic to command
-twist_topic="/g500/velocityCommand"
+thrusters_topic="/g500/thrusters_input"
 #base velocity for the teleoperation (0.5 m/s) / (0.5rad/s)
-baseVelocity=0.5
+baseVelocity=1
 
 ##create the publisher
 rospy.init_node('waypointFollow')
-pub = rospy.Publisher(twist_topic, TwistStamped,queue_size=1)
-
+pub = rospy.Publisher(thrusters_topic, Float64MultiArray,queue_size=1)
 ###wait for benchmark init service
 #rospy.wait_for_service('/startBench')
 #start=rospy.ServiceProxy('/startBench', Empty)
@@ -38,9 +37,38 @@ pub = rospy.Publisher(twist_topic, TwistStamped,queue_size=1)
 #where are we moving to
 currentwaypoint=0
 
+basePower = 0.3
+
+def getPower(d):
+	if fabs(d) < 0.5:
+		power = 0
+	elif d > 0:
+		power = basePower
+	else:
+		power = -basePower
+	return power
+
+def setXpower(data, dx):
+	power = getPower(dx)
+	data[0] = -power
+	data[1] = -power
+	return power
+
+def setYpower(data, dy):
+	power = getPower(dy)
+	data[4] = power
+	return power
+	
+def setZpower(data, dz):
+	power = getPower(dz)
+	data[2] = -power
+	data[3] = -power
+	return power
+	
 listener = tf.TransformListener()
 while not rospy.is_shutdown() and currentwaypoint < len(waypoints):
-  msg = TwistStamped()
+  msg = Float64MultiArray()
+  msg.data = [0,0,0,0,0]
   try:
   	(trans,rot) = listener.lookupTransform('/world', '/girona500', rospy.Time(0))
 	wRv=tf.transformations.quaternion_matrix(rot)
@@ -55,14 +83,20 @@ while not rospy.is_shutdown() and currentwaypoint < len(waypoints):
 	vTp=tf.transformations.translation_from_matrix(vMp)
 	print vTp
 	print "###################"
-	msg.twist.linear.x=vTp[0]*baseVelocity
-	msg.twist.linear.y=vTp[1]*baseVelocity
-	msg.twist.linear.z=vTp[2]*baseVelocity
-	msg.twist.angular.z=0.0
-	pub.publish(msg)
-	if fabs(vTp[0]) < 0.05 and fabs(vTp[1]) < 0.05 and fabs(vTp[2]) < 0.05:
-		currentwaypoint += 1
 
+	dx = vTp[0]
+	dy = vTp[1]
+	dz = vTp[2]
+	adx = fabs(dx)
+	ady = fabs(dy)
+	adz = fabs(dz)
+	xres = setXpower(msg.data, dx)
+	yres = setYpower(msg.data, dy)
+	zres = setZpower(msg.data, dz)
+	pub.publish(msg)
+
+	if xres == 0 and yres == 0 and zres == 0:
+		currentwaypoint += 1
   except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
   	print "ERROR"
   	continue

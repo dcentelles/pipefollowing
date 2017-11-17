@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from geometry_msgs.msg import TwistStamped
+from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image
 import rospy
 import numpy as np
@@ -10,6 +10,7 @@ from cv_bridge import CvBridge, CvBridgeError
 #import service library
 from std_srvs.srv import Empty
 import math
+from scipy.interpolate import interp1d
 
 class imageGrabber:
 
@@ -47,13 +48,14 @@ class imageGrabber:
 
       vlines = []
       hlines = []
-      dumbral = 0.5
+      dumbral = 0.9
       xvlines = 0
       yvlines = 0
       xhlines = 0
       yhlines = 0
 
       vdir = 0
+      hdir = 0
       vxmin = 2000
       vxmax = -2000
 
@@ -84,6 +86,7 @@ class imageGrabber:
 				hlines.append(line)
 				xhlines += x1+x2
 				yhlines += y1+y2
+				hdir += dir
 	      
       vdumbral = int(self.height/3)
       
@@ -93,19 +96,19 @@ class imageGrabber:
       tv = lvlines*2
       th = lhlines*2
 
-      self.grosor = None
+      self.grosor = cv2.countNonZero(binar)
       if tv > 0:
-      		self.grosor = math.fabs(vxmax - vxmin)
       		self.hayVerticales = True
 		vdir = vdir / lvlines
+		self.vdir = vdir
 		cvlines = (xvlines/tv,yvlines/tv)
-		if vdir < -0.3:
+		if vdir < 0:
 			self.inclinacionDerecha = True
 			self.enVertical = False
-		elif vdir > 0.3:
+		elif vdir > 0:
 			self.inclinacionDerecha = False
 			self.enVertical = False
-		elif vdir == 0:
+		else:
 			self.inclinacionDerecha = False
 			self.enVertical = True
 
@@ -130,6 +133,7 @@ class imageGrabber:
 		else:
 			self.aLaDerecha = False
 			self.centrado = True
+		self.dx = dx
 		cv2.circle(cv_image, cvlines, 5, (20,20,20),-1)
       else:
       	self.hayVerticales = False
@@ -141,17 +145,31 @@ class imageGrabber:
 		ximg = self.imcenter[0]
 		yimg = self.imcenter[1]
 		dcenter = (xpipe-ximg, ypipe-yimg);
-		dx = dcenter[0]
-		dy = dcenter[1]
-		if dy < vdumbral:
-			self.hayGiro = True
-			if(dx > 0):
-				self.giroALaDerecha = True
-			elif dx < 0:
-				self.giroALaDerecha = False
-	
+
+		if tv == 0 or self.verticalesDetras:
+			dx = dcenter[0]
+			dy = dcenter[1]
+			if dy < vdumbral:
+				self.hayGiro = True #Horizontales delante
+				if(dx > 0):
+					self.giroALaDerecha = True
+				else:
+					self.giroALaDerecha = False
+
+			else:
+				self.hayGiro = False
 		else:
 			self.hayGiro = False
+#		else:
+#			self.hayGiro = True
+#			hdir = hdir / th
+#			if hdir < 0:
+#				self.giroALaDerecha = True
+#				
+#			elif hdir > 0:
+#				self.giroALaDerecha = False
+
+			
 		cv2.circle(cv_image, chlines, 5, (100,100,255),-1)
       else:
       	self.hayGiro = False
@@ -162,153 +180,135 @@ class imageGrabber:
 
     cv2.circle(cv_image, self.imcenter, 5, (100,100,100),-1)
     cv2.imshow("Image window", cv_image)
-    cv2.imshow("Segmentation", binar)
-    cv2.imshow("Edges", edges)
+ #   cv2.imshow("Segmentation", binar)
+ #   cv2.imshow("Edges", edges)
     cv2.waitKey(3)
 
   ##Return size of the image
   def getSize(self):
     return self.width,self.height
 
+
+def getPower(dif, m):
+	return float(m(dif))
+
+import signal
+import sys
+
+stop = None
+
+def signal_handler(signal, frame):
+        print('You pressed Ctrl+C! Stoping benchmarch...')
+	stop()
+	print("Stoped!")
+	
+        sys.exit(0)
+
 if __name__ == '__main__':
+  global stop
   #topic to command
-  twist_topic="/g500/velocityCommand"
+  thrusters_topic="/g500/thrusters_input"
   #base velocity for the teleoperation (0.2 m/s) / (0.2rad/s)
   baseVelocity=0.5
 
   ##create the publisher
   rospy.init_node('pipeFollowing')
-  pub = rospy.Publisher(twist_topic, TwistStamped,queue_size=1)
+  pub = rospy.Publisher(thrusters_topic, Float64MultiArray,queue_size=1)
   
  # ##wait for benchmark init service
- # rospy.wait_for_service('/startBench')
- # start=rospy.ServiceProxy('/startBench', Empty)
+  rospy.wait_for_service('/startBench')
+  start=rospy.ServiceProxy('/startBench', Empty)
  # 
  # ##wait for benchmark stop service
- # rospy.wait_for_service('/stopBench')
- # stop=rospy.ServiceProxy('/stopBench', Empty)
+  rospy.wait_for_service('/stopBench')
+  stop=rospy.ServiceProxy('/stopBench', Empty)
 
   #Create the imageGrabber
   IG=imageGrabber()
-  
- # start()
+ 
+  ymax = 200
+  m = interp1d([0,ymax],[0,1])
+  zmax = 15000
+  zm = interp1d([0,zmax],[0,1])
+  start()
+
+  signal.signal(signal.SIGINT, signal_handler)
   while not rospy.is_shutdown():
-    msg = TwistStamped()
+    msg = Float64MultiArray()
+    msg.data = [0,0,0,0,0]
 
     #get width x height of the last received image
     imwidth,imheight=IG.getSize()
 
-    msg.twist.linear.x=0
-    msg.twist.linear.y=0
-    msg.twist.linear.z=0
-    msg.twist.angular.z=0.0
-    if IG.grosor != None:
-    	    print IG.grosor
-	    if IG.grosor < 300:
-		    if IG.grosor > 35:
-			print "Subir"
-			msg.twist.linear.z = -baseVelocity*0.6
-		    elif IG.grosor < 30:
-			print "Bajar"
-			msg.twist.linear.z = baseVelocity*0.6
-	    else:
-	    	print "Bajar rapido"
-		msg.twist.linear.z = baseVelocity*3
+    perdido = False
+
     if IG.hayGiro:
-	if IG.hayVerticales:
-		if IG.verticalesDetras:
-			msg.twist.linear.x=0
-			if IG.giroALaDerecha:
-				print "(verticales detras) Girar a la derecha yendo lateralmente a la derecha"
-				msg.twist.linear.y=baseVelocity
-				msg.twist.angular.z=baseVelocity
+	desfase = 1
+	msg.data[0] = -1
+	msg.data[1] = -1
 
-			else:
-				print "(verticales detras) Girar a la izquierda yendo lateralmente a a la izquierda"
-				msg.twist.linear.y=-baseVelocity
-				msg.twist.angular.z=-baseVelocity
-
-		else:
-			msg.twist.linear.x=baseVelocity*2
-			msg.twist.linear.y=0
-			if IG.giroALaDerecha:
-				print "(verticales detras) Girar a la derecha yendo hacia adelante"
-				msg.twist.angular.z=baseVelocity
-			else:
-				print "(verticales detras) Girar a la izquierda yendo hacia adelante"
-				msg.twist.angular.z=-baseVelocity
-	elif IG.giroALaDerecha:
-		print "Girar a la derecha yendo lateralmente a la derecha"
-		msg.twist.linear.y=baseVelocity
-		msg.twist.angular.z=baseVelocity
+	if IG.giroALaDerecha:
+		print "GIRO A LA DERECHA PRONUNCIADO"
+		msg.data[1] = desfase
 	else:
-		print "Girar a la izquierda yendo lateralmente a la izquierda"
-		msg.twist.linear.y=-baseVelocity
-		msg.twist.angular.z=-baseVelocity
-		
+		print "GIRO A LA IZQUIERDA PRONUNCIADO"
+		msg.data[0] = desfase
 
     elif IG.hayVerticales:
-    	msg.twist.linear.x=baseVelocity*2
-	if IG.enVertical:
-		if IG.centrado:
-			print "Seguir recto"
-		elif IG.aLaDerecha:
-			print "seguir recto moviendose lateralmente a la derecha"
-			msg.twist.linear.y=baseVelocity
-		else:
-			print "seguir recto moviendose lateralmente a la izquierda"
-			msg.twist.linear.y=-baseVelocity
-	elif IG.inclinacionDerecha:
-		msg.twist.angular.z=baseVelocity
-		if IG.centrado:
-			print "Seguir recto girando a la derehca"
-		elif IG.aLaDerecha:
-			print "seguir recto moviendose lateralmente a la derecha girando a la derecha"
+    	msg.data[0] = -baseVelocity
+    	msg.data[1] = -baseVelocity
+	print IG.vdir
+    	desfase = baseVelocity*0.8
+	dx = min(math.fabs(IG.dx), ymax)
+	if IG.centrado:
+		pass
 
-			msg.twist.linear.y=baseVelocity
-		else:
-			print "seguir recto moviendose lateralmente a la izquierda girando a la derecha"
-			msg.twist.linear.y=-baseVelocity
-
+	elif IG.aLaDerecha:
+		power = getPower(dx,m)
+		print "Moviendose lateralmente a la derecha " + str(power)
+		msg.data[4] = power
 	else:
-		msg.twist.angular.z=-baseVelocity
-		if IG.centrado:
-			print "Seguir recto girando a la izquierda"
-		elif IG.aLaDerecha:
-			print "seguir recto moviendose lateralmente a la derecha girando a la izquierda"
-			msg.twist.linear.y=baseVelocity
+		power = getPower(dx,m)
+		print "Moviendose lateralmente a la izquierda " +str(power)
+		msg.data[4] = -power
 
-		else:
-			print "seguir recto moviendose lateralmente a la izquierda girando a la izquierda"
+	if IG.enVertical:
+		pass
 
-			msg.twist.linear.y=-baseVelocity
+	elif IG.inclinacionDerecha:
+		print "Hacia adelante girando a la derecha"
+		msg.data[1] = desfase
+	else:
+		print "Hacia adelante girando a la izquierda"
+		msg.data[0] = desfase
 
 	
     else:
+    	perdido = True
 	print "Subir e ir hacia atras"
-	msg.twist.linear.z = -baseVelocity
-	msg.twist.linear.x = -baseVelocity
+	msg.data[0] = baseVelocity*0.5
+    	msg.data[1] = baseVelocity*0.5
+
+	msg.data[2] = baseVelocity*0.5
+	msg.data[3] = baseVelocity*0.5
 
 
+    if not perdido and IG.grosor != None:
 
+	    altura = 8500
+	    dz = min(math.fabs(altura-IG.grosor), zmax)
+	    power = getPower(dz,zm)
+	    if IG.grosor > altura:
+		print "Subir "+str(dz)+" "+str(power)
+		msg.data[2] = power
+		msg.data[3] = power
+
+	    elif IG.grosor < altura:
+		print "Bajar "+str(dz)+" "+str(power)
+		msg.data[2] = -power
+		msg.data[3] = -power
     pub.publish(msg)
-  #  if IG.enVertical:
-  #  	msg.twist.linear.x = baseVelocity
-  #  elif IG.inclinacionDerecha:
-  #  	msg.twist.angular.z = baseVelocity
-  #  else:
-  #  	msg.twist.angular.z = -baseVelocity
-
-  #  if IG.centrado:
-  #  	pass
-  #  elif IG.aLaDerecha:
-  #  	msg.twist.linear.y = baseVelocity
-  #  else:
-  #  	msg.twist.linear.y = -baseVelocity
-
-  #  pub.publish(msg)
     
     rospy.sleep(0.1)
   
-  #stop()
 

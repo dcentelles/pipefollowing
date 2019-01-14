@@ -1,0 +1,38 @@
+<launch>
+<group ns="girona500_1">
+	<include file="$(find underwater_vehicle_dynamics)/launch/dynamics.launch">
+	   <arg name="namespace" value="g500" />
+	   <arg name="params" value="$(find underwater_vehicle_dynamics)/config/dynamics_g500.yaml" />
+	</include>
+	<rosparam param="g500/dynamics/initial_pose">[1.4,4.5,7.5,0,0,-1.87]</rosparam>
+	<rosparam param="g500/dynamics/external_force_topic">g500/ForceSensor</rosparam>
+</group>
+
+<group ns="girona500_2">
+	<include file="$(find underwater_vehicle_dynamics)/launch/dynamics.launch">
+	   <arg name="namespace" value="g500" />
+	   <arg name="params" value="$(find underwater_vehicle_dynamics)/config/dynamics_g500.yaml" />
+	</include>
+	<rosparam param="g500/dynamics/initial_pose">[-1.4,-4.5,7.5,0,0,1.27]</rosparam>
+	<rosparam param="g500/dynamics/external_force_topic">g500/ForceSensor</rosparam>
+</group>
+
+<group ns="girona500_3">
+	<include file="$(find underwater_vehicle_dynamics)/launch/dynamics.launch">
+	   <arg name="namespace" value="g500" />
+	   <arg name="params" value="$(find underwater_vehicle_dynamics)/config/dynamics_g500.yaml" />
+	</include>
+	<rosparam param="g500/dynamics/initial_pose">[-1.4,0,7.5,0,0,1.27]</rosparam>
+	<rosparam param="g500/dynamics/external_force_topic">g500/ForceSensor</rosparam>
+</group>
+
+	<arg name="scene" default="$(find uwsim)/data/scenes/pipeFollowing_basicpr.xml" />
+
+	<node name="uwsim" pkg="uwsim" type="uwsim" args="--dataPath $(find uwsim)/data/scenes --configfile $(arg scene)" output="screen" respawn="false"/>
+
+	<node name="groundTruth_basic" pkg="pipefollowing" type="groundTruth_basic" output="screen" respawn="false" />
+
+	<node name="keyboard" pkg="pipefollowing" type="keyboard.py" output="screen" respawn="false" />
+
+</launch>
+

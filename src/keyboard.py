@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-
-from geometry_msgs.msg import TwistStamped
+from std_msgs.msg import Float64MultiArray
 import termios, fcntl, sys, os
 import rospy
 
@@ -8,9 +7,9 @@ import rospy
 from std_srvs.srv import Empty
 
 #topic to command
-twist_topic="/bluerov2/velocityCommand"
+thrusters_topic="/g500/thrusters_input"
 #base velocity for the teleoperation (0.5 m/s) / (0.5rad/s)
-baseVelocity=0.2
+baseVelocity=1
 
 #Console input variables to teleop it from the console
 fd = sys.stdin.fileno()
@@ -22,7 +21,7 @@ oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
 fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
 
 ##create the publisher
-pub = rospy.Publisher(twist_topic, TwistStamped,queue_size=1)
+pub = rospy.Publisher(thrusters_topic, Float64MultiArray,queue_size=1)
 rospy.init_node('keyboardCommand')
 
 ##wait for benchmark init service
@@ -36,7 +35,8 @@ rospy.init_node('keyboardCommand')
 #The try is necessary for the console input!
 try:
     while not rospy.is_shutdown():
-	msg = TwistStamped()
+	msg = Float64MultiArray()
+	msg.data = [0,0,0,0,0]
         try:
             c = sys.stdin.read(1)
             ##Depending on the character set the proper speeds
@@ -47,27 +47,30 @@ try:
 		stop()
 		print "Benchmark finished!"
 	    elif c=='w':
-	    	msg.twist.linear.x = baseVelocity
+	    	msg.data[0] = -baseVelocity
+	    	msg.data[1] = -baseVelocity
 	    elif c=='s':
-	    	msg.twist.linear.x = -baseVelocity
+	    	msg.data[0] = baseVelocity
+	    	msg.data[1] = baseVelocity
 	    elif c=='a':
-	    	msg.twist.linear.y =  -baseVelocity
+	    	msg.data[4] = -baseVelocity
 	    elif c=='d':
-	    	msg.twist.linear.y = baseVelocity
+	    	msg.data[4] = baseVelocity
 	    elif c=='\x1b':  ##This means we are pressing an arrow!
 		c2= sys.stdin.read(1)
 		c2= sys.stdin.read(1)
 	        if c2=='A':
-		    print "Subiendo"
-		    msg.twist.linear.z=-baseVelocity
+			msg.data[2] = baseVelocity
+			msg.data[3] = baseVelocity
 	        elif c2=='B':
-		    msg.twist.linear.z=baseVelocity
+			msg.data[2] = -baseVelocity
+			msg.data[3] = -baseVelocity
 		elif c2=='C': #Flecha derecha
-			print "Flecha derecha"
-			msg.twist.angular.z=baseVelocity
+			msg.data[0] = -baseVelocity
+	    		msg.data[1] = baseVelocity
 		elif c2=='D': #Flecha izquierda
-			print "Flecha izquierda"
-			msg.twist.angular.z=-baseVelocity
+			msg.data[0] = baseVelocity
+	    		msg.data[1] = -baseVelocity
 	    else:
 		print 'wrong key pressed'
 	    while c!='':

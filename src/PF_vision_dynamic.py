@@ -60,7 +60,7 @@ class imageGrabber:
       vxmax = -2000
 
       print "#########"
-      if lines!=None:
+      if lines is not None and len(lines)>0:
 		pos = 0
 		for x1,y1,x2,y2 in lines[0]:
 			cv2.line(cv_image,(x1,y1),(x2,y2),(0,0,255),2)

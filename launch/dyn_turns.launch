@@ -7,7 +7,7 @@
 
 	<arg name="scene" default="pipeFollowing_turns.xml" />
 	<arg name="bench" default="pipeFollowing.xml" />
-	<node name="uwsimbenchmarks" pkg="uwsimbenchmarks" type="uwsimbenchmarks" args="--configfile $(arg scene) --benchmark $(arg bench)" output="screen" respawn="false"/>
+	<node name="uwsimbenchmarks" pkg="uwsimbenchmarks" type="uwsimbenchmarks" args="--configfile $(find uwsim)/data/scenes/$(arg scene) --benchmark $(arg bench)" output="screen" respawn="false"/>
 
 	<node name="groundTruth_turns" pkg="pipefollowing" type="groundTruth_turns" output="screen" respawn="false" />
 

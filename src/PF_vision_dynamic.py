@@ -59,7 +59,7 @@ class imageGrabber:
       vxmin = 2000
       vxmax = -2000
 
-      print "#########"
+      #print "#########"
       if lines is not None and len(lines)>0:
 		pos = 0
 		for x1,y1,x2,y2 in lines[0]:
@@ -228,11 +228,12 @@ if __name__ == '__main__':
  
   ymax = 200
   m = interp1d([0,ymax],[0,1])
-  zmax = 15000
-  zm = interp1d([0,zmax],[0,1])
   start()
 
   signal.signal(signal.SIGINT, signal_handler)
+  zintegral = 0
+  prezerror = 0
+
   while not rospy.is_shutdown():
     msg = Float64MultiArray()
     msg.data = [0,0,0,0,0]
@@ -243,21 +244,21 @@ if __name__ == '__main__':
     perdido = False
 
     if IG.hayGiro:
-	desfase = 1
+	desfase = 0.8
 	msg.data[0] = -1
 	msg.data[1] = -1
 
 	if IG.giroALaDerecha:
-		print "GIRO A LA DERECHA PRONUNCIADO"
+	#	print "GIRO A LA DERECHA PRONUNCIADO"
 		msg.data[1] = desfase
 	else:
-		print "GIRO A LA IZQUIERDA PRONUNCIADO"
+	#	print "GIRO A LA IZQUIERDA PRONUNCIADO"
 		msg.data[0] = desfase
 
     elif IG.hayVerticales:
     	msg.data[0] = -baseVelocity
     	msg.data[1] = -baseVelocity
-	print IG.vdir
+	#print IG.vdir
     	desfase = baseVelocity*0.8
 	dx = min(math.fabs(IG.dx), ymax)
 	if IG.centrado:
@@ -265,27 +266,29 @@ if __name__ == '__main__':
 
 	elif IG.aLaDerecha:
 		power = getPower(dx,m)
-		print "Moviendose lateralmente a la derecha " + str(power)
+	#	print "Moviendose lateralmente a la derecha " + str(power)
 		msg.data[4] = power
 	else:
 		power = getPower(dx,m)
-		print "Moviendose lateralmente a la izquierda " +str(power)
+	#	print "Moviendose lateralmente a la izquierda " +str(power)
 		msg.data[4] = -power
 
 	if IG.enVertical:
 		pass
 
 	elif IG.inclinacionDerecha:
-		print "Hacia adelante girando a la derecha"
+	#	print "Hacia adelante girando a la derecha"
 		msg.data[1] = desfase
 	else:
-		print "Hacia adelante girando a la izquierda"
+	#	print "Hacia adelante girando a la izquierda"
 		msg.data[0] = desfase
 
 	
     else:
     	perdido = True
-	print "Subir e ir hacia atras"
+        zintegral = 0
+        prezerror = 0
+	#print "Subir e ir hacia atras"
 	msg.data[0] = baseVelocity*0.5
     	msg.data[1] = baseVelocity*0.5
 
@@ -293,22 +296,48 @@ if __name__ == '__main__':
 	msg.data[3] = baseVelocity*0.5
 
 
+    kp = 0.2
+    kd = 1
+    ki = 0.01
+    dt = 0.1
+    zmax = 1000
+    zmin = zmax * -1
+    zm = interp1d([zmin,zmax],[-1,1])
+
+    # double dt, double max, double min, double Kp, double Kd, double Ki 
+    # ID(0.1, 100, -100, 0.1, 0.01, 0.5
     if not perdido and IG.grosor != None:
 
-	    altura = 8500
-	    dz = min(math.fabs(altura-IG.grosor), zmax)
-	    power = getPower(dz,zm)
-	    if IG.grosor > altura:
-		print "Subir "+str(dz)+" "+str(power)
-		msg.data[2] = power
-		msg.data[3] = power
+	    altura = 4250
+            zerror = altura-IG.grosor
+            
+            pout = kp * zerror
+            
+            zintegral = zintegral + zerror*dt
+            iout = ki * zintegral
 
-	    elif IG.grosor < altura:
-		print "Bajar "+str(dz)+" "+str(power)
-		msg.data[2] = -power
-		msg.data[3] = -power
+            zderivative = (zerror - prezerror) / dt
+            dout = kd * zderivative
+            prezerror = zerror
+            
+            rrpower = pout + iout + dout
+            rpower = rrpower
+            if(rrpower > zmax):
+                rpower = zmax
+            elif(rrpower < zmin):
+                rpower = zmin
+
+	    power = getPower(rpower, zm) 
+            power = power * -1
+	
+            #print("Zmax: {} T: {} V: {} zerror: {} P: {} I: {} D: {} RRPOWER: {} RPOWER: {} POWER: {}".format(zmax, altura, IG.grosor, zerror, pout, iout, dout, rrpower, rpower, power))
+            
+            print("Zmax: {} T: {} V: {} zerror: {} P: {} D: {} RRPOWER: {} RPOWER: {} POWER: {}".format(zmax, altura, IG.grosor, zerror, pout, dout, rrpower, rpower, power))
+            msg.data[2] = power
+	    msg.data[3] = power
+
     pub.publish(msg)
     
-    rospy.sleep(0.1)
+    rospy.sleep(dt)
   
 
